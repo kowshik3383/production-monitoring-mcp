@@ -1,6 +1,9 @@
 import dotenv from "dotenv";
+import { getStoredConfig } from "./config/store.js";
 
 dotenv.config();
+
+const stored = getStoredConfig();
 
 export interface AppConfig {
   sentry: {
@@ -32,29 +35,35 @@ export interface AppConfig {
 
 export const config: AppConfig = {
   sentry: {
-    authToken: process.env.SENTRY_AUTH_TOKEN,
-    org: process.env.SENTRY_ORG,
-    project: process.env.SENTRY_PROJECT,
-    host: process.env.SENTRY_HOST || "https://sentry.io",
+    authToken: process.env.SENTRY_AUTH_TOKEN || stored.sentryAuthToken,
+    org: process.env.SENTRY_ORG || stored.sentryOrg,
+    project: process.env.SENTRY_PROJECT || stored.sentryProject,
+    host: process.env.SENTRY_HOST || stored.sentryHost || "https://sentry.io",
   },
   github: {
-    token: process.env.GITHUB_TOKEN,
-    owner: process.env.GITHUB_OWNER,
-    repo: process.env.GITHUB_REPO,
+    token: process.env.GITHUB_TOKEN || stored.githubToken,
+    owner: process.env.GITHUB_OWNER || stored.githubOwner,
+    repo: process.env.GITHUB_REPO || stored.githubRepo,
   },
   vercel: {
-    token: process.env.VERCEL_TOKEN,
-    teamId: process.env.VERCEL_TEAM_ID,
-    projectId: process.env.VERCEL_PROJECT_ID,
+    token: process.env.VERCEL_TOKEN || stored.vercelToken,
+    teamId: process.env.VERCEL_TEAM_ID || stored.vercelTeamId,
+    projectId: process.env.VERCEL_PROJECT_ID || stored.vercelProjectId,
   },
   betterstack: {
-    uptimeToken: process.env.BETTERSTACK_API_TOKEN || process.env.BETTER_STACK_API_TOKEN,
-    logsToken: process.env.BETTERSTACK_LOGS_TOKEN || process.env.LOGTAIL_SOURCE_TOKEN,
+    uptimeToken:
+      process.env.BETTERSTACK_API_TOKEN ||
+      process.env.BETTER_STACK_API_TOKEN ||
+      stored.betterstackUptimeToken,
+    logsToken:
+      process.env.BETTERSTACK_LOGS_TOKEN ||
+      process.env.LOGTAIL_SOURCE_TOKEN ||
+      stored.betterstackLogsToken,
   },
   cloudflare: {
-    apiToken: process.env.CLOUDFLARE_API_TOKEN,
-    zoneId: process.env.CLOUDFLARE_ZONE_ID,
-    accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+    apiToken: process.env.CLOUDFLARE_API_TOKEN || stored.cloudflareApiToken,
+    zoneId: process.env.CLOUDFLARE_ZONE_ID || stored.cloudflareZoneId,
+    accountId: process.env.CLOUDFLARE_ACCOUNT_ID || stored.cloudflareAccountId,
   },
 };
 

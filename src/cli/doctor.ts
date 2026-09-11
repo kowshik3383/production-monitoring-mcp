@@ -1,41 +1,43 @@
-import { config, getProviderStatus } from "./config.js";
-import { SentryProvider } from "./providers/sentry.js";
-import { GitHubProvider } from "./providers/github.js";
-import { VercelProvider } from "./providers/vercel.js";
-import { BetterStackProvider } from "./providers/betterstack.js";
-import { CloudflareProvider } from "./providers/cloudflare.js";
+import { config, getProviderStatus } from "../config.js";
+import { getConfigFilePath } from "../config/store.js";
+import { SentryProvider } from "../providers/sentry.js";
+import { GitHubProvider } from "../providers/github.js";
+import { VercelProvider } from "../providers/vercel.js";
+import { BetterStackProvider } from "../providers/betterstack.js";
+import { CloudflareProvider } from "../providers/cloudflare.js";
 
-async function runCheck() {
+export async function runDoctor(): Promise<void> {
   console.log("=================================================");
-  console.log(" 🛰️  Production Monitoring MCP - Health Check");
-  console.log("=================================================\n");
+  console.log(" 🛰️  Production Monitoring MCP - Doctor Check");
+  console.log("=================================================");
+  console.log(` Config Store: ${getConfigFilePath()}\n`);
 
   const status = getProviderStatus();
 
-  // 1. Sentry Check
+  // 1. Sentry
   if (status.sentry.configured) {
     const sentry = new SentryProvider();
     try {
-      const errors = await sentry.getRecentErrors({ limit: 3 });
+      const errors = await sentry.getRecentErrors({ limit: 1 });
       console.log(`✅ Sentry: CONNECTED`);
-      console.log(`   Org: ${config.sentry.org} | Retrieved ${errors.length} recent error issues.`);
+      console.log(`   Org: ${config.sentry.org} | Retrieved live error metrics.`);
     } catch (err: any) {
-      console.log(`❌ Sentry: FAILED to query API - ${err.message}`);
+      console.log(`❌ Sentry: FAILED - ${err.message}`);
     }
   } else {
     console.log(`⚪ Sentry: SKIPPED (Missing: ${status.sentry.missing.join(", ")})`);
   }
 
-  // 2. GitHub Check
+  // 2. GitHub
   if (status.github.configured) {
     const gh = new GitHubProvider();
     try {
       if (config.github.owner && config.github.repo) {
-        const deploys = await gh.getDeployments({ limit: 2 });
+        await gh.getDeployments({ limit: 1 });
         console.log(`✅ GitHub: CONNECTED`);
-        console.log(`   Repo: ${config.github.owner}/${config.github.repo} | Verified read access.`);
+        console.log(`   Repo: ${config.github.owner}/${config.github.repo}`);
       } else {
-        console.log(`✅ GitHub: TOKEN DETECTED (Set GITHUB_OWNER & GITHUB_REPO to test repo queries).`);
+        console.log(`✅ GitHub: TOKEN DETECTED (Set GITHUB_OWNER & GITHUB_REPO to enable repo tools)`);
       }
     } catch (err: any) {
       console.log(`❌ GitHub: FAILED - ${err.message}`);
@@ -44,13 +46,13 @@ async function runCheck() {
     console.log(`⚪ GitHub: SKIPPED (Missing: GITHUB_TOKEN)`);
   }
 
-  // 3. Vercel Check
+  // 3. Vercel
   if (status.vercel.configured) {
     const vercel = new VercelProvider();
     try {
-      const deploys = await vercel.getDeployments({ limit: 2 });
+      const deploys = await vercel.getDeployments({ limit: 1 });
       console.log(`✅ Vercel: CONNECTED`);
-      console.log(`   Retrieved ${deploys.length} recent deployment(s).`);
+      console.log(`   Found ${deploys.length} recent deployment(s).`);
     } catch (err: any) {
       console.log(`❌ Vercel: FAILED - ${err.message}`);
     }
@@ -58,13 +60,13 @@ async function runCheck() {
     console.log(`⚪ Vercel: SKIPPED (Missing: VERCEL_TOKEN)`);
   }
 
-  // 4. Better Stack Check
+  // 4. Better Stack
   if (status.betterstack.configured) {
     const bs = new BetterStackProvider();
     try {
       const monitors = await bs.getMonitors();
       console.log(`✅ Better Stack: CONNECTED`);
-      console.log(`   Found ${monitors.length} uptime monitor(s).`);
+      console.log(`   Found ${monitors.length} active uptime monitor(s).`);
     } catch (err: any) {
       console.log(`❌ Better Stack: FAILED - ${err.message}`);
     }
@@ -72,16 +74,16 @@ async function runCheck() {
     console.log(`⚪ Better Stack: SKIPPED (Missing: BETTERSTACK_API_TOKEN)`);
   }
 
-  // 5. Cloudflare Check
+  // 5. Cloudflare
   if (status.cloudflare.configured) {
     const cf = new CloudflareProvider();
     try {
       if (config.cloudflare.zoneId) {
         const analytics = await cf.getHttpAnalytics({ sinceMinutesAgo: 10 });
         console.log(`✅ Cloudflare: CONNECTED`);
-        console.log(`   Analytics verified. Edge requests in past 10m: ${analytics.totalRequests}`);
+        console.log(`   Requests (10m): ${analytics.totalRequests}`);
       } else {
-        console.log(`✅ Cloudflare: TOKEN DETECTED (Set CLOUDFLARE_ZONE_ID to test analytics).`);
+        console.log(`✅ Cloudflare: TOKEN DETECTED (Set CLOUDFLARE_ZONE_ID to test analytics)`);
       }
     } catch (err: any) {
       console.log(`❌ Cloudflare: FAILED - ${err.message}`);
@@ -91,8 +93,6 @@ async function runCheck() {
   }
 
   console.log("\n=================================================");
-  console.log(" Ready to run: npm start or npx tsx src/index.ts");
+  console.log(" Run 'npx production-monitoring-mcp init' to configure missing services.");
   console.log("=================================================");
 }
-
-runCheck().catch(console.error);

@@ -89,105 +89,69 @@ sequenceDiagram
 
 ---
 
-## ⚙️ Quick Start
+## ⚙️ Quick Start (Interactive Setup Wizard)
 
-### 1. Prerequisites
-- **Node.js**: v20 or higher
-- **npm** or **pnpm**
-
-### 2. Setup & Environment Variables
-Copy `.env.example` to `.env`:
+### 1. Run the Setup Wizard
+Run the interactive setup wizard via `npx` with zero local configuration required:
 
 ```bash
-cp .env.example .env
+npx production-monitoring-mcp init
 ```
 
-Configure the tokens for your stack:
-```ini
-# Sentry
-SENTRY_AUTH_TOKEN=sntrys_...
-SENTRY_ORG=your-sentry-org
-SENTRY_PROJECT=your-project
+The terminal wizard will:
+1. Let you choose the services you want to connect (Sentry, GitHub, Vercel, Better Stack, Cloudflare).
+2. Prompt for your tokens and test each API connection live with real-time feedback.
+3. Save your credentials securely in your machine's user configuration directory (`conf`).
+4. **Automatically configure Claude Desktop and local AI clients** with zero manual editing.
 
-# GitHub
-GITHUB_TOKEN=ghp_...
-GITHUB_OWNER=your-org
-GITHUB_REPO=your-repo
+---
 
-# Vercel
-VERCEL_TOKEN=...
-VERCEL_PROJECT_ID=...
+### 2. Verify Connection Health
+Run the built-in diagnostic doctor at any time:
 
-# Better Stack
-BETTERSTACK_API_TOKEN=...
-BETTERSTACK_LOGS_TOKEN=...
-
-# Cloudflare (Optional)
-CLOUDFLARE_API_TOKEN=...
-CLOUDFLARE_ZONE_ID=...
-```
-
-### 3. Verify Connectivity
-Run the built-in diagnostic checker:
 ```bash
-npm run check
-```
-
-Expected output:
-```text
-=================================================
- 🛰️  Production Monitoring MCP - Health Check
-=================================================
-
-✅ Sentry: CONNECTED (Org: acme-corp | 3 recent errors)
-✅ GitHub: CONNECTED (Repo: acme-corp/api)
-✅ Vercel: CONNECTED (Found 5 deployments)
-✅ Better Stack: CONNECTED (All monitors UP)
-⚪ Cloudflare: SKIPPED (No token configured)
-```
-
-### 4. Build
-```bash
-npm run build
+npx production-monitoring-mcp doctor
 ```
 
 ---
 
 ## 🔌 Connecting to AI Clients
 
-### Antigravity CLI / Gemini Code Assist
-Add to your `mcp_servers.json`:
+### Automatic Configuration
+If you didn't run the installer during `init`, configure your local AI clients with:
+
+```bash
+npx production-monitoring-mcp install
+```
+
+### Manual Configuration
+You can also add it manually to your client config:
+
+#### Claude Desktop (`claude_desktop_config.json`)
 ```json
 {
   "mcpServers": {
     "production-monitoring": {
-      "command": "node",
-      "args": ["/absolute/path/to/production-monitoring-mcp/dist/index.js"],
-      "env": {
-        "SENTRY_AUTH_TOKEN": "your-sentry-token",
-        "SENTRY_ORG": "your-org",
-        "GITHUB_TOKEN": "your-github-token",
-        "GITHUB_OWNER": "your-owner",
-        "GITHUB_REPO": "your-repo",
-        "VERCEL_TOKEN": "your-vercel-token",
-        "BETTERSTACK_API_TOKEN": "your-betterstack-token"
-      }
+      "command": "npx",
+      "args": ["-y", "production-monitoring-mcp"]
     }
   }
 }
 ```
 
-### Claude Desktop (`claude_desktop_config.json`)
+#### Antigravity CLI / Gemini / Cursor (`mcp_servers.json`)
 ```json
 {
   "mcpServers": {
-    "prod-monitoring": {
-      "command": "node",
-      "args": ["/absolute/path/to/production-monitoring-mcp/dist/index.js"]
+    "production-monitoring": {
+      "command": "npx",
+      "args": ["-y", "production-monitoring-mcp"]
     }
   }
 }
 ```
+
+*(You can also pass environment variables directly in the `"env"` block if you prefer not to use the local config store)*
 
 ---
 
