@@ -162,7 +162,7 @@ Add to your `mcp_servers.json`:
   "mcpServers": {
     "production-monitoring": {
       "command": "node",
-      "args": ["C:/Users/saipr/OneDrive/Desktop/mcp/dist/index.js"],
+      "args": ["/absolute/path/to/production-monitoring-mcp/dist/index.js"],
       "env": {
         "SENTRY_AUTH_TOKEN": "your-sentry-token",
         "SENTRY_ORG": "your-org",
@@ -183,7 +183,7 @@ Add to your `mcp_servers.json`:
   "mcpServers": {
     "prod-monitoring": {
       "command": "node",
-      "args": ["C:\\Users\\saipr\\OneDrive\\Desktop\\mcp\\dist\\index.js"]
+      "args": ["/absolute/path/to/production-monitoring-mcp/dist/index.js"]
     }
   }
 }
