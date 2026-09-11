@@ -1,0 +1,39 @@
+{
+  "name": "production-monitoring-mcp",
+  "version": "1.0.0",
+  "description": "Production Monitoring MCP Server connecting AI agents to Sentry, Better Stack, Vercel, Cloudflare, and GitHub",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "prod-monitor-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "check": "tsx src/check.ts"
+  },
+  "keywords": [
+    "mcp",
+    "monitoring",
+    "observability",
+    "sentry",
+    "betterstack",
+    "vercel",
+    "github"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@octokit/rest": "^21.1.1",
+    "axios": "^1.20.0",
+    "dotenv": "^17.4.2",
+    "zod": "^4.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "tsx": "^4.23.13",
+    "typescript": "^5.7.0"
+  }
+}
