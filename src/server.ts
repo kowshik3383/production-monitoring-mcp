@@ -49,6 +49,124 @@ export async function startMcpServer(): Promise<void> {
     }
   );
 
+  // Tool: Get Production Health (One-Glance System Pulse)
+  server.tool(
+    "get_production_health",
+    "Single-call operational pulse across all connected services (Uptime, Sentry error spikes, latest Vercel deploy, Cloudflare 5xx). Returns lean status signals rather than verbose raw logs.",
+    {
+      project: z.string().optional().describe("Optional project/service name to check"),
+    },
+    async ({ project }) => {
+      try {
+        const signals: Array<{ service: string; status: "HEALTHY" | "WARN" | "CRITICAL"; reason: string }> = [];
+        let totalScore = 100;
+
+        // 1. Check Uptime
+        if (betterstack.isConfigured()) {
+          try {
+            const monitors = await betterstack.getMonitors();
+            const down = monitors.filter((m) => m.status === "down");
+            if (down.length > 0) {
+              signals.push({
+                service: "Uptime",
+                status: "CRITICAL",
+                reason: `${down.length} monitor(s) currently DOWN: ${down.map((d) => d.name).join(", ")}`,
+              });
+              totalScore -= 40;
+            } else {
+              signals.push({ service: "Uptime", status: "HEALTHY", reason: `All ${monitors.length} monitor(s) UP` });
+            }
+          } catch {}
+        }
+
+        // 2. Check Sentry Errors
+        if (sentry.isConfigured()) {
+          try {
+            const errors = await sentry.getRecentErrors({ project, statsPeriod: "1h", limit: 5 });
+            const totalCount = errors.reduce((acc, e) => acc + e.count, 0);
+            if (totalCount > 50) {
+              signals.push({
+                service: "Errors (Sentry)",
+                status: "CRITICAL",
+                reason: `Error spike: ${totalCount} errors in past hour. Top issue: '${errors[0]?.title}'`,
+              });
+              totalScore -= 30;
+            } else if (totalCount > 5) {
+              signals.push({
+                service: "Errors (Sentry)",
+                status: "WARN",
+                reason: `${totalCount} errors in past hour`,
+              });
+              totalScore -= 10;
+            } else {
+              signals.push({ service: "Errors (Sentry)", status: "HEALTHY", reason: "Zero to low error volume past hour" });
+            }
+          } catch {}
+        }
+
+        // 3. Check Vercel Deployment
+        let latestDeployInfo = "none";
+        if (vercel.isConfigured()) {
+          try {
+            const deploys = await vercel.getDeployments({ projectId: project, target: "production", limit: 1 });
+            if (deploys.length > 0) {
+              const d = deploys[0];
+              const minutesAgo = Math.max(0, Math.round((Date.now() - new Date(d.createdAt).getTime()) / 60000));
+              latestDeployInfo = `${d.id} (${d.commitSha?.slice(0, 7) || "no sha"}) deployed ${minutesAgo}m ago [${d.state}]`;
+              if (d.state === "ERROR") {
+                signals.push({ service: "Deployment (Vercel)", status: "CRITICAL", reason: `Latest deployment failed: ${d.id}` });
+                totalScore -= 30;
+              } else {
+                signals.push({ service: "Deployment (Vercel)", status: "HEALTHY", reason: `Latest deployment ${d.state} (${minutesAgo}m ago)` });
+              }
+            }
+          } catch {}
+        }
+
+        // 4. Check Cloudflare
+        if (cloudflare.isConfigured()) {
+          try {
+            const analytics = await cloudflare.getHttpAnalytics({ sinceMinutesAgo: 60 });
+            const errorRate = parseFloat(analytics.errorRate5xx);
+            if (errorRate > 3.0) {
+              signals.push({ service: "Edge (Cloudflare)", status: "CRITICAL", reason: `High 5xx rate: ${analytics.errorRate5xx} (${analytics.statusCodes["5xx"]} requests)` });
+              totalScore -= 30;
+            } else if (errorRate > 0.5) {
+              signals.push({ service: "Edge (Cloudflare)", status: "WARN", reason: `Elevated 5xx rate: ${analytics.errorRate5xx}` });
+              totalScore -= 10;
+            } else {
+              signals.push({ service: "Edge (Cloudflare)", status: "HEALTHY", reason: `Normal edge traffic (${analytics.totalRequests} req, 5xx: ${analytics.errorRate5xx})` });
+            }
+          } catch {}
+        }
+
+        const score = Math.max(0, totalScore);
+        const overallStatus = score >= 85 ? "HEALTHY" : score >= 50 ? "DEGRADED" : "OUTAGE";
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: safeJsonStringify({
+                overallStatus,
+                healthScore: score,
+                summary: overallStatus === "HEALTHY" ? "All production signals operational." : "Degraded operational signals detected.",
+                signals,
+                latestDeployment: latestDeployInfo,
+                suggestedAction: overallStatus !== "HEALTHY" ? "Run correlate_incident(service_or_project) or explain_incident() to triage." : "System healthy. No immediate action required.",
+              }),
+            },
+          ],
+        };
+      } catch (err: any) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Failed to compute production health: ${err.message}` }],
+        };
+      }
+    }
+  );
+
   // Tool: Get Recent Errors (Sentry)
   server.tool(
     "get_recent_errors",
@@ -420,6 +538,78 @@ export async function startMcpServer(): Promise<void> {
         return {
           isError: true,
           content: [{ type: "text", text: `Failed to correlate incident: ${err.message}` }],
+        };
+      }
+    }
+  );
+
+  // Tool: Explain Incident (Human-Readable Executive Summary)
+  server.tool(
+    "explain_incident",
+    "Generates a human-readable executive briefing of an incident with root cause, evidence chain, confidence, and recommended action.",
+    {
+      service_or_project: z.string().describe("Project name / Sentry project / Vercel project"),
+      owner: z.string().optional().describe("GitHub owner or organization"),
+      repo: z.string().optional().describe("GitHub repo name"),
+      deployment_id: z.string().optional().describe("Specific deployment ID to triage"),
+      timeframe: z.string().optional().describe("Timeframe to evaluate e.g. '24h', '2d'"),
+    },
+    async ({ service_or_project, owner, repo, deployment_id, timeframe }) => {
+      try {
+        const report = await correlation.correlateIncident({
+          serviceOrProject: service_or_project,
+          owner,
+          repo,
+          deploymentId: deployment_id,
+          timeframe,
+        });
+
+        const ev = report.evaluation;
+        const cand = ev.candidate;
+
+        let briefing = `# 🛰️ Incident Triage Briefing: ${service_or_project}\n\n`;
+        briefing += `**Verdict:** \`${ev.verdict}\` (${ev.confidence.percentage}% Confidence — ${ev.confidence.level})\n\n`;
+
+        if (cand) {
+          briefing += `### 🎯 Suspected Root Cause\n`;
+          briefing += `• **Offending File:** \`${cand.file}${cand.line ? `:${cand.line}` : ""}\`\n`;
+          if (cand.commitSha) briefing += `• **Introduced in Commit:** \`${cand.commitSha.slice(0, 7)}\`\n`;
+          if (cand.commitAuthor) briefing += `• **Author:** ${cand.commitAuthor}\n`;
+          if (cand.commitMessage) briefing += `• **Commit Message:** "${cand.commitMessage.split("\n")[0]}"\n`;
+          briefing += `• **Sentry Error:** ${cand.errorTitle}\n\n`;
+        } else {
+          briefing += `### ℹ️ Root Cause Analysis\nNo definitive single commit or code file matched the error stacktrace.\n\n`;
+        }
+
+        briefing += `### 🔍 Evidence Chain\n`;
+        for (const item of ev.confidence.basis) {
+          briefing += `• ${item}\n`;
+        }
+        if (ev.confidence.basis.length === 0) {
+          briefing += `• No strong evidence matches found.\n`;
+        }
+
+        if (ev.confidence.caveats.length > 0) {
+          briefing += `\n### ⚠️ Caveats\n`;
+          for (const c of ev.confidence.caveats) {
+            briefing += `• ${c}\n`;
+          }
+        }
+
+        briefing += `\n### 🛠️ Recommended Action\n${ev.recommendation}\n`;
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: briefing,
+            },
+          ],
+        };
+      } catch (err: any) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Failed to explain incident: ${err.message}` }],
         };
       }
     }

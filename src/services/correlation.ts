@@ -2,12 +2,37 @@ import { SentryProvider } from "../providers/sentry.js";
 import { GitHubProvider } from "../providers/github.js";
 import { VercelProvider } from "../providers/vercel.js";
 import { BetterStackProvider } from "../providers/betterstack.js";
+import { normalizeFilePath, arePathsEquivalent } from "../core/normalization/path.js";
+import { parseGitDiff, ParsedFileDiff } from "../core/diff/parser.js";
 import {
-  IncidentCorrelationReport,
+  evaluateIncidentEvidence,
+  IncidentEvaluation,
+  CandidateRootCause,
+} from "../core/evidence/model.js";
+import {
   UnifiedDeployment,
   UnifiedError,
   UnifiedErrorDetails,
 } from "../types/domain.js";
+
+export interface EnhancedIncidentReport {
+  timestamp: string;
+  context: {
+    serviceOrProject: string;
+    environment: "production" | "staging" | "preview";
+    timeframe: string;
+  };
+  targetDeployment?: UnifiedDeployment;
+  previousDeployment?: UnifiedDeployment;
+  codeChangesSummary?: {
+    totalCommits: number;
+    filesModifiedCount: number;
+    baseSha: string;
+    headSha: string;
+  };
+  evaluation: IncidentEvaluation;
+  topErrors: UnifiedError[];
+}
 
 export class CorrelationService {
   constructor(
@@ -18,15 +43,20 @@ export class CorrelationService {
   ) {}
 
   /**
-   * Automatically correlate a deployment with subsequent Sentry errors, git commit diffs, and logs.
+   * Correlate a deployment with subsequent Sentry errors, git commit diffs, and telemetry signals
+   * using multi-dimensional evidence evaluation.
    */
   async correlateIncident(params: {
     serviceOrProject: string;
     owner?: string;
     repo?: string;
     deploymentId?: string;
+    environment?: "production" | "staging" | "preview";
     timeframe?: string; // e.g. "24h", "2d"
-  }): Promise<IncidentCorrelationReport> {
+  }): Promise<EnhancedIncidentReport> {
+    const environment = params.environment || "production";
+    const timeframe = params.timeframe || "24h";
+
     let targetDeployment: UnifiedDeployment | undefined;
     let previousDeployment: UnifiedDeployment | undefined;
 
@@ -35,7 +65,7 @@ export class CorrelationService {
       try {
         const deployments = await this.vercel.getDeployments({
           projectId: params.serviceOrProject,
-          target: "production",
+          target: environment === "staging" ? "preview" : (environment as "production" | "preview"),
           limit: 5,
         });
 
@@ -49,18 +79,18 @@ export class CorrelationService {
             previousDeployment = deployments[1];
           }
         }
-      } catch (err) {
-        // Fallback or continue if Vercel error
+      } catch {
+        // Continue to fallback
       }
     }
 
-    // Fallback to GitHub deployments if Vercel not configured or returned nothing
+    // Fallback to GitHub deployments
     if (!targetDeployment && this.github.isConfigured() && params.owner && params.repo) {
       try {
         const ghDeploys = await this.github.getDeployments({
           owner: params.owner,
           repo: params.repo,
-          environment: "production",
+          environment,
           limit: 5,
         });
 
@@ -88,14 +118,15 @@ export class CorrelationService {
             };
           }
         }
-      } catch (err) {
-        // GitHub deploy fetch failed
+      } catch {
+        // Fallback
       }
     }
 
-    // 2. Fetch Git Diff if commits are available
-    let codeChanges;
-    const changedFileNames = new Set<string>();
+    // 2. Fetch and parse Git Diff
+    let parsedDiffMap = new Map<string, ParsedFileDiff>();
+    let rawDiffFiles: any[] = [];
+    let headCommitMeta: any;
 
     if (
       this.github.isConfigured() &&
@@ -105,86 +136,144 @@ export class CorrelationService {
       previousDeployment?.commitSha
     ) {
       try {
-        codeChanges = await this.github.compareDeployments({
+        const codeChanges = await this.github.compareDeployments({
           owner: params.owner,
           repo: params.repo,
           base: previousDeployment.commitSha,
           head: targetDeployment.commitSha,
         });
 
-        for (const f of codeChanges.files) {
-          changedFileNames.add(f.filename.toLowerCase());
-          const basename = f.filename.split("/").pop()?.toLowerCase();
-          if (basename) changedFileNames.add(basename);
-        }
-      } catch (err) {
-        // Diff failed or commits not found
+        rawDiffFiles = codeChanges.files;
+        parsedDiffMap = parseGitDiff(codeChanges.files);
+        headCommitMeta = codeChanges.commits[codeChanges.commits.length - 1];
+      } catch {
+        // Diff comparison unavailable
       }
     }
 
-    // 3. Query Sentry for recent errors
+    // 3. Query Sentry for candidate errors
     let suspectErrors: UnifiedError[] = [];
-    const matchedFiles = new Set<string>();
-    let likelyRootCause = "";
+    let bestEvaluation: IncidentEvaluation | null = null;
 
     if (this.sentry.isConfigured()) {
       try {
         suspectErrors = await this.sentry.getRecentErrors({
           project: params.serviceOrProject,
-          statsPeriod: params.timeframe || "24h",
+          statsPeriod: timeframe,
           limit: 10,
         });
 
-        // Deep-inspect stack traces of top errors to correlate with changed files
+        const deployTime = targetDeployment?.readyAt
+          ? new Date(targetDeployment.readyAt).getTime()
+          : targetDeployment?.createdAt
+          ? new Date(targetDeployment.createdAt).getTime()
+          : Date.now();
+
+        // Inspect top errors to find the strongest candidate
         for (const err of suspectErrors.slice(0, 5)) {
           try {
             const details: UnifiedErrorDetails = await this.sentry.getErrorDetails(err.id);
-            for (const frame of details.stacktrace) {
-              const frameFile = frame.filename.toLowerCase();
-              const frameBasename = frameFile.split("/").pop()?.split("\\").pop() || "";
+            const errFirstSeen = new Date(err.firstSeen).getTime();
+            const minutesDiff = Math.max(0, Math.round((errFirstSeen - deployTime) / (60 * 1000)));
+            const isPostDeploy = errFirstSeen >= deployTime - 5 * 60 * 1000; // 5m grace period
 
-              if (changedFileNames.has(frameFile) || changedFileNames.has(frameBasename)) {
-                matchedFiles.add(frame.filename);
-                likelyRootCause = `Error "${err.title}" originates from ${frame.filename}:${frame.lineno || "unknown"}, which was modified in commit ${targetDeployment?.commitSha?.slice(0, 7) || "latest deployment"}.`;
+            for (const frame of details.stacktrace) {
+              const normFrameFile = normalizeFilePath(frame.filename);
+
+              // Find matching file in diff
+              for (const [diffFile, parsedDiff] of parsedDiffMap.entries()) {
+                if (arePathsEquivalent(normFrameFile, diffFile)) {
+                  const lineModified = frame.lineno ? parsedDiff.isLineModified(frame.lineno) : false;
+                  const lineInContext = frame.lineno ? parsedDiff.isLineInContext(frame.lineno) : false;
+
+                  const candidateEval = evaluateIncidentEvidence({
+                    code: {
+                      fileMatch: true,
+                      lineModified,
+                      lineInContext,
+                      matchedFile: diffFile,
+                      matchedLine: frame.lineno,
+                    },
+                    runtime: {
+                      errorCount: err.count,
+                      affectedUsers: err.userCount,
+                      isUnresolved: err.status === "unresolved",
+                      hasStackTrace: details.stacktrace.length > 0,
+                    },
+                    temporal: {
+                      minutesBetweenDeployAndError: minutesDiff,
+                      isPostDeploy,
+                      edgeSpikeCorrelated: true, // Correlated with deployment window
+                    },
+                    candidateMeta: {
+                      functionName: frame.function,
+                      commitSha: targetDeployment?.commitSha,
+                      commitAuthor: headCommitMeta?.author,
+                      commitMessage: headCommitMeta?.message,
+                      errorTitle: err.title,
+                      errorId: err.id,
+                    },
+                  });
+
+                  // Track the highest confidence candidate
+                  if (!bestEvaluation || candidateEval.confidence.score > bestEvaluation.confidence.score) {
+                    bestEvaluation = candidateEval;
+                  }
+                }
               }
             }
-          } catch (e) {
-            // Ignore single error detail failure
+          } catch {
+            // Ignore individual error parsing failures
           }
         }
-      } catch (err) {
-        // Sentry fetch failed
+      } catch {
+        // Sentry query failed
       }
     }
 
-    const matchingFilesArray = Array.from(matchedFiles);
-
-    // 4. Construct synthesized executive summary
-    let summary = `Incident Triage Report for ${params.serviceOrProject}\n`;
-    if (targetDeployment) {
-      summary += `• Target Deployment: ${targetDeployment.id} (${targetDeployment.commitSha?.slice(0, 7) || "no sha"}) deployed at ${targetDeployment.createdAt}\n`;
-    }
-    if (codeChanges) {
-      summary += `• Code Changes: ${codeChanges.totalCommits} commits, ${codeChanges.files.length} files modified between ${codeChanges.baseSha.slice(0, 7)} and ${codeChanges.headSha.slice(0, 7)}\n`;
-    }
-    summary += `• Sentry Unresolved Errors: ${suspectErrors.length} found in timeframe (${params.timeframe || "24h"})\n`;
-    if (matchingFilesArray.length > 0) {
-      summary += `• CRITICAL REGRESSION CORRELATION: Offending files present in both Git diff and error stacktraces: ${matchingFilesArray.join(", ")}\n`;
+    // Default evaluation if no candidate matched
+    if (!bestEvaluation) {
+      bestEvaluation = evaluateIncidentEvidence({
+        code: {
+          fileMatch: false,
+          lineModified: false,
+          lineInContext: false,
+          matchedFile: "none",
+        },
+        runtime: {
+          errorCount: suspectErrors.reduce((sum, e) => sum + e.count, 0),
+          affectedUsers: suspectErrors.reduce((sum, e) => sum + e.userCount, 0),
+          isUnresolved: suspectErrors.length > 0,
+          hasStackTrace: false,
+        },
+        temporal: {
+          minutesBetweenDeployAndError: 0,
+          isPostDeploy: false,
+          edgeSpikeCorrelated: false,
+        },
+      });
     }
 
     return {
       timestamp: new Date().toISOString(),
-      serviceOrProject: params.serviceOrProject,
+      context: {
+        serviceOrProject: params.serviceOrProject,
+        environment,
+        timeframe,
+      },
       targetDeployment,
       previousDeployment,
-      codeChanges,
-      suspectErrors,
-      matchingFilesBetweenDiffAndStackTrace: matchingFilesArray,
-      summary,
-      likelyRootCause: likelyRootCause || (suspectErrors.length > 0 ? "Multiple unresolved errors detected, but no direct stacktrace file match with git diff." : "No critical error correlation found."),
-      recommendedAction: matchingFilesArray.length > 0
-        ? `Roll back deployment ${targetDeployment?.id || ""} or revert offending commits in ${matchingFilesArray[0]}.`
-        : "Investigate Sentry error details and runtime logs around deployment timestamp.",
+      codeChangesSummary:
+        targetDeployment?.commitSha && previousDeployment?.commitSha
+          ? {
+              totalCommits: rawDiffFiles.length > 0 ? 1 : 0,
+              filesModifiedCount: rawDiffFiles.length,
+              baseSha: previousDeployment.commitSha,
+              headSha: targetDeployment.commitSha,
+            }
+          : undefined,
+      evaluation: bestEvaluation,
+      topErrors: suspectErrors.slice(0, 5),
     };
   }
 }

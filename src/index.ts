@@ -4,6 +4,7 @@ import { startMcpServer } from "./server.js";
 import { runSetupWizard } from "./cli/wizard.js";
 import { runDoctor } from "./cli/doctor.js";
 import { autoInstallClients, getRecommendedConfigSnippet } from "./cli/installer.js";
+import { runDemoSimulation } from "./cli/demo.js";
 import { clearStoredConfig, getConfigFilePath } from "./config/store.js";
 
 const program = new Command();
@@ -12,6 +13,13 @@ program
   .name("production-monitoring-mcp")
   .description("Production Monitoring MCP Server connecting AI agents to Sentry, GitHub, Vercel, Better Stack, and Cloudflare")
   .version("1.0.0");
+
+program
+  .command("demo")
+  .description("Run a deterministic offline simulation of an incident triage investigation")
+  .action(async () => {
+    await runDemoSimulation();
+  });
 
 program
   .command("init")
