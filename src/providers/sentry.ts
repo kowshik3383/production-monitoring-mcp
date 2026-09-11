@@ -57,13 +57,16 @@ export class SentryProvider {
       queryParts.push("is:unresolved");
     }
 
-    const res = await this.client!.get(`/projects/${this.org}/${project}/issues/`, {
-      params: {
-        query: queryParts.join(" "),
-        statsPeriod: params?.statsPeriod || "24h",
-        limit: params?.limit || 20,
-      },
-    });
+    const res = await this.client!.get(
+      `/projects/${encodeURIComponent(this.org)}/${encodeURIComponent(project)}/issues/`,
+      {
+        params: {
+          query: queryParts.join(" "),
+          statsPeriod: params?.statsPeriod || "24h",
+          limit: params?.limit || 20,
+        },
+      }
+    );
 
     return res.data.map((item: any): UnifiedError => ({
       id: item.id,
@@ -88,8 +91,8 @@ export class SentryProvider {
     this.ensureConfigured();
 
     const [issueRes, eventRes] = await Promise.all([
-      this.client!.get(`/issues/${issueId}/`),
-      this.client!.get(`/issues/${issueId}/events/latest/`).catch(() => ({ data: null })),
+      this.client!.get(`/issues/${encodeURIComponent(issueId)}/`),
+      this.client!.get(`/issues/${encodeURIComponent(issueId)}/events/latest/`).catch(() => ({ data: null })),
     ]);
 
     const issue = issueRes.data;

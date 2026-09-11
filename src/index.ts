@@ -10,6 +10,7 @@ import { VercelProvider } from "./providers/vercel.js";
 import { BetterStackProvider } from "./providers/betterstack.js";
 import { CloudflareProvider } from "./providers/cloudflare.js";
 import { CorrelationService } from "./services/correlation.js";
+import { safeJsonStringify } from "./utils/sanitizer.js";
 
 // Initialize Provider Clients
 const sentry = new SentryProvider();
@@ -36,16 +37,12 @@ server.tool(
       content: [
         {
           type: "text",
-          text: JSON.stringify(
-            {
-              message: "Production Observability Status",
-              providers: status,
-              instructions:
-                "To enable any unconfigured provider, set the missing environment variables in your .env file.",
-            },
-            null,
-            2
-          ),
+          text: safeJsonStringify({
+            message: "Production Observability Status",
+            providers: status,
+            instructions:
+              "To enable any unconfigured provider, set the missing environment variables in your .env file.",
+          }),
         },
       ],
     };
@@ -75,7 +72,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify({ count: errors.length, errors }, null, 2),
+            text: safeJsonStringify({ count: errors.length, errors }),
           },
         ],
       };
@@ -102,7 +99,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(details, null, 2),
+            text: safeJsonStringify(details),
           },
         ],
       };
@@ -131,7 +128,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify({ count: regressions.length, regressions }, null, 2),
+            text: safeJsonStringify({ count: regressions.length, regressions }),
           },
         ],
       };
@@ -165,7 +162,7 @@ server.tool(
           content: [
             {
               type: "text",
-              text: JSON.stringify({ provider: "vercel", count: deployments.length, deployments }, null, 2),
+              text: safeJsonStringify({ provider: "vercel", count: deployments.length, deployments }),
             },
           ],
         };
@@ -178,7 +175,7 @@ server.tool(
           content: [
             {
               type: "text",
-              text: JSON.stringify({ provider: "github", count: deployments.length, deployments }, null, 2),
+              text: safeJsonStringify({ provider: "github", count: deployments.length, deployments }),
             },
           ],
         };
@@ -217,7 +214,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify({ deployment_id, count: logs.length, logs }, null, 2),
+            text: safeJsonStringify({ deployment_id, count: logs.length, logs }),
           },
         ],
       };
@@ -252,7 +249,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(diff, null, 2),
+            text: safeJsonStringify(diff),
           },
         ],
       };
@@ -281,7 +278,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(commit, null, 2),
+            text: safeJsonStringify(commit),
           },
         ],
       };
@@ -309,19 +306,15 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(
-              {
-                summary: {
-                  totalMonitors: monitors.length,
-                  monitorsDown: monitors.filter((m) => m.status === "down").length,
-                  activeIncidents: incidents.filter((i: any) => !i.resolvedAt).length,
-                },
-                monitors,
-                recentIncidents: incidents.slice(0, 5),
+            text: safeJsonStringify({
+              summary: {
+                totalMonitors: monitors.length,
+                monitorsDown: monitors.filter((m) => m.status === "down").length,
+                activeIncidents: incidents.filter((i: any) => !i.resolvedAt).length,
               },
-              null,
-              2
-            ),
+              monitors,
+              recentIncidents: incidents.slice(0, 5),
+            }),
           },
         ],
       };
@@ -351,7 +344,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify({ count: logs.length, logs }, null, 2),
+            text: safeJsonStringify({ count: logs.length, logs }),
           },
         ],
       };
@@ -382,7 +375,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(analytics, null, 2),
+            text: safeJsonStringify(analytics),
           },
         ],
       };
@@ -419,7 +412,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(report, null, 2),
+            text: safeJsonStringify(report),
           },
         ],
       };
