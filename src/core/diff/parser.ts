@@ -14,14 +14,19 @@ export interface DiffHunk {
   header: string;
 }
 
+export type FileDiffStatus = "added" | "modified" | "removed" | "renamed";
+
 export class ParsedFileDiff {
   public filename: string;
+  public status: FileDiffStatus;
   public hunks: DiffHunk[] = [];
   public addedLinesSet: Set<number> = new Set();
+  public removedLinesSet: Set<number> = new Set();
   public contextLinesSet: Set<number> = new Set();
 
-  constructor(filename: string, patch?: string) {
+  constructor(filename: string, patch?: string, status: FileDiffStatus = "modified") {
     this.filename = filename;
+    this.status = status;
     if (patch) {
       this.parsePatch(patch);
     }
@@ -65,15 +70,21 @@ export class ParsedFileDiff {
 
       if (!currentHunk) continue;
 
+      // Skip git diff metadata markers like "\ No newline at end of file"
+      if (line.startsWith("\\")) {
+        continue;
+      }
+
       if (line.startsWith("+") && !line.startsWith("+++")) {
         currentHunk.addedLines.push(currentNewLine);
         this.addedLinesSet.add(currentNewLine);
         currentNewLine++;
       } else if (line.startsWith("-") && !line.startsWith("---")) {
         currentHunk.removedLines.push(currentOldLine);
+        this.removedLinesSet.add(currentOldLine);
         currentOldLine++;
       } else {
-        // Context line or newline
+        // Context line or unchanged line
         currentHunk.contextLines.push(currentNewLine);
         this.contextLinesSet.add(currentNewLine);
         currentOldLine++;
@@ -95,20 +106,43 @@ export class ParsedFileDiff {
   }
 
   /**
+   * Returns true if the specific line number in the previous file was removed in this commit.
+   */
+  public isLineRemoved(oldLineno: number): boolean {
+    return this.removedLinesSet.has(oldLineno);
+  }
+
+  /**
    * Returns true if the line number is within the surrounding context of changes in this commit.
    */
   public isLineInContext(lineno: number): boolean {
     return this.contextLinesSet.has(lineno);
+  }
+
+  /**
+   * Returns true if the line number is within threshold lines of any added/modified line.
+   */
+  public isLineNearModification(lineno: number, threshold = 3): boolean {
+    if (this.addedLinesSet.has(lineno)) return true;
+    for (let offset = 1; offset <= threshold; offset++) {
+      if (this.addedLinesSet.has(lineno - offset) || this.addedLinesSet.has(lineno + offset)) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 
 /**
  * Parses a collection of git diff files into queryable ParsedFileDiff instances.
  */
-export function parseGitDiff(files: Array<{ filename: string; patch?: string }>): Map<string, ParsedFileDiff> {
+export function parseGitDiff(
+  files: Array<{ filename: string; patch?: string; status?: string }>
+): Map<string, ParsedFileDiff> {
   const result = new Map<string, ParsedFileDiff>();
   for (const f of files) {
-    result.set(f.filename.toLowerCase(), new ParsedFileDiff(f.filename, f.patch));
+    const status = (f.status as FileDiffStatus) || "modified";
+    result.set(f.filename.toLowerCase(), new ParsedFileDiff(f.filename, f.patch, status));
   }
   return result;
 }
