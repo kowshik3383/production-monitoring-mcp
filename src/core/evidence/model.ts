@@ -31,6 +31,7 @@ export interface TemporalEvidence {
 
 export type ConfidenceLevel =
   | "HIGH_CONFIDENCE"
+  | "LIKELY_REGRESSION"
   | "LIKELY_CAUSE"
   | "POSSIBLE_CAUSE"
   | "INSUFFICIENT_DATA";
@@ -183,8 +184,8 @@ export function evaluateIncidentEvidence(params: {
     level = "HIGH_CONFIDENCE";
     verdict = "HIGH_CONFIDENCE_REGRESSION";
     recommendation = `Roll back deployment ${params.candidateMeta?.commitSha?.slice(0, 7) || ""} or revert commits modifying ${params.code.matchedFile}.`;
-  } else if (compositeScore >= 0.65 && params.code.fileMatch) {
-    level = "LIKELY_CAUSE";
+  } else if ((compositeScore >= 0.60 && params.code.fileMatch) || (params.code.fileMatch && params.temporal.isPostDeploy)) {
+    level = "LIKELY_REGRESSION";
     verdict = "LIKELY_REGRESSION";
     recommendation = `Investigate recent changes to ${params.code.matchedFile}; consider hotfix or partial rollback.`;
   } else if (compositeScore >= 0.4) {
