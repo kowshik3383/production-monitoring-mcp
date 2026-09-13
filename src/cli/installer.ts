@@ -23,6 +23,35 @@ function getClaudeConfigPath(): string | null {
   }
 }
 
+function getCursorConfigPaths(): string[] {
+  const platform = os.platform();
+  const home = os.homedir();
+  const paths: string[] = [];
+
+  // Home .cursor folder (common cross-platform convention)
+  paths.push(path.join(home, ".cursor", "mcp.json"));
+
+  if (platform === "win32") {
+    const appdata = process.env.APPDATA || path.join(home, "AppData", "Roaming");
+    paths.push(path.join(appdata, "Cursor", "User", "globalStorage", "cursor.mcp", "mcp.json"));
+  } else if (platform === "darwin") {
+    paths.push(
+      path.join(home, "Library", "Application Support", "Cursor", "User", "globalStorage", "cursor.mcp", "mcp.json")
+    );
+  } else {
+    paths.push(
+      path.join(home, ".config", "Cursor", "User", "globalStorage", "cursor.mcp", "mcp.json")
+    );
+  }
+
+  return paths;
+}
+
+function getClaudeCodeConfigPath(): string | null {
+  const home = os.homedir();
+  return path.join(home, ".claude.json");
+}
+
 function getAntigravityConfigPath(): string | null {
   const home = os.homedir();
   return path.join(home, ".gemini", "antigravity-cli", "mcp_servers.json");
@@ -83,13 +112,27 @@ export function autoInstallClients(): InstallResult[] {
   const claudePath = getClaudeConfigPath();
   if (claudePath) {
     const dir = path.dirname(claudePath);
-    // If Claude directory or config exists, configure it
     if (fs.existsSync(dir) || fs.existsSync(claudePath)) {
       results.push(installIntoConfig(claudePath, "Claude Desktop"));
     }
   }
 
-  // 2. Antigravity CLI
+  // 2. Cursor
+  for (const cursorPath of getCursorConfigPaths()) {
+    const dir = path.dirname(cursorPath);
+    if (fs.existsSync(dir) || fs.existsSync(cursorPath)) {
+      results.push(installIntoConfig(cursorPath, "Cursor"));
+      break;
+    }
+  }
+
+  // 3. Claude Code
+  const claudeCodePath = getClaudeCodeConfigPath();
+  if (claudeCodePath && fs.existsSync(claudeCodePath)) {
+    results.push(installIntoConfig(claudeCodePath, "Claude Code"));
+  }
+
+  // 4. Antigravity CLI
   const antigravityPath = getAntigravityConfigPath();
   if (antigravityPath) {
     const dir = path.dirname(antigravityPath);
