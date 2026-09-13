@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import { getStoredConfig } from "./config/store.js";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const stored = getStoredConfig();
 
