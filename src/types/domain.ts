@@ -22,6 +22,25 @@ export interface ErrorStackFrame {
   context?: string[];
 }
 
+export interface NormalizedStackFrame {
+  normalizedPath: string; // e.g. "src/services/checkout.ts"
+  functionName?: string;
+  lineno?: number;
+  colno?: number;
+  inApp: boolean;
+  contextCode?: string[];
+}
+
+export interface IncidentContext {
+  environment: "production" | "staging" | "preview";
+  project: string;
+  service?: string;
+  timeframe: {
+    from: string;
+    to: string;
+  };
+}
+
 export interface UnifiedErrorDetails extends UnifiedError {
   type?: string;
   value?: string;

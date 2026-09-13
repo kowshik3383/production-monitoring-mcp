@@ -1,10 +1,6 @@
-/**
- * Path & Stack-Frame Normalizer
- * Normalizes disparate file paths from Sentry, Webpack, Docker containers,
- * Vercel Lambda functions, and GitHub repository diffs into canonical relative repo paths.
- */
+import { ErrorStackFrame, NormalizedStackFrame } from "../../types/domain.js";
 
-export function normalizeFilePath(rawPath: string): string {
+export function normalizeFilePath(rawPath: string, preserveCase = false): string {
   if (!rawPath || typeof rawPath !== "string") {
     return "";
   }
@@ -31,11 +27,38 @@ export function normalizeFilePath(rawPath: string): string {
   // Strip Next.js / bundler chunk prefixes
   p = p.replace(/^_next\/static\/chunks\//, "");
   p = p.replace(/^\.next\/server\//, "");
+  p = p.replace(/^dist\//, "");
 
   // Remove leading './' or '/'
   p = p.replace(/^(\.\/|\/)+/, "");
 
-  return p.toLowerCase();
+  return preserveCase ? p : p.toLowerCase();
+}
+
+/**
+ * Normalizes a raw Sentry/runtime error stack frame into a canonical NormalizedStackFrame.
+ */
+export function normalizeStackFrame(frame: ErrorStackFrame): NormalizedStackFrame {
+  const normalizedPath = normalizeFilePath(frame.filename, false);
+
+  // Clean function names from bundler artifacts
+  let functionName = frame.function?.trim();
+  if (functionName) {
+    functionName = functionName
+      .replace(/^async\s+/, "")
+      .replace(/^Object\./, "")
+      .replace(/\s*\[as\s+[^\]]+\]$/, "")
+      .replace(/__WEBPACK_DEFAULT_EXPORT__/, "default");
+  }
+
+  return {
+    normalizedPath,
+    functionName,
+    lineno: frame.lineno,
+    colno: frame.colno,
+    inApp: frame.inApp ?? true,
+    contextCode: frame.context,
+  };
 }
 
 /**
@@ -43,8 +66,8 @@ export function normalizeFilePath(rawPath: string): string {
  * accounting for base names, leading directory structures, and extensions (.js vs .ts).
  */
 export function arePathsEquivalent(pathA: string, pathB: string): boolean {
-  const normA = normalizeFilePath(pathA);
-  const normB = normalizeFilePath(pathB);
+  const normA = normalizeFilePath(pathA, false);
+  const normB = normalizeFilePath(pathB, false);
 
   if (!normA || !normB) return false;
 
@@ -70,3 +93,43 @@ export function arePathsEquivalent(pathA: string, pathB: string): boolean {
 
   return false;
 }
+
+/**
+ * Resolves a stack frame file path against a set of monorepo file paths
+ * (e.g. apps/web/src/services/checkout.ts matching src/services/checkout.ts).
+ */
+export function resolveMonorepoPath(
+  framePath: string,
+  candidateRepoPaths: string[]
+): string | undefined {
+  const normFrame = normalizeFilePath(framePath, false);
+  if (!normFrame) return undefined;
+
+  // 1. Exact match
+  for (const p of candidateRepoPaths) {
+    if (normalizeFilePath(p, false) === normFrame) {
+      return p;
+    }
+  }
+
+  // 2. Suffix / subpath equivalence match
+  for (const p of candidateRepoPaths) {
+    if (arePathsEquivalent(normFrame, p)) {
+      return p;
+    }
+  }
+
+  // 3. Monorepo pattern match (apps/<app>/<path> or packages/<pkg>/<path>)
+  for (const p of candidateRepoPaths) {
+    const strippedRepoPath = normalizeFilePath(p, false).replace(
+      /^(apps|packages|services|libs|projects)\/[^/]+\//,
+      ""
+    );
+    if (arePathsEquivalent(normFrame, strippedRepoPath)) {
+      return p;
+    }
+  }
+
+  return undefined;
+}
+
