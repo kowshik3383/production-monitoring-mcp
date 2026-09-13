@@ -64,7 +64,7 @@ export class GitHubProvider {
       additions: f.additions,
       deletions: f.deletions,
       changes: f.changes,
-      patch: f.patch ? (f.patch.length > 500 ? f.patch.slice(0, 500) + "\n... [truncated]" : f.patch) : undefined,
+      patch: f.patch || undefined,
     }));
 
     return {
@@ -108,7 +108,7 @@ export class GitHubProvider {
         filename: f.filename,
         status: f.status,
         changes: f.changes,
-        patch: f.patch?.slice(0, 1000),
+        patch: f.patch,
       })),
     };
   }

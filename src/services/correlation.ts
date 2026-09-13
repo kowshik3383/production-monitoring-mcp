@@ -2,6 +2,7 @@ import { SentryProvider } from "../providers/sentry.js";
 import { GitHubProvider } from "../providers/github.js";
 import { VercelProvider } from "../providers/vercel.js";
 import { BetterStackProvider } from "../providers/betterstack.js";
+import { CloudflareProvider } from "../providers/cloudflare.js";
 import { normalizeFilePath, arePathsEquivalent } from "../core/normalization/path.js";
 import { parseGitDiff, ParsedFileDiff } from "../core/diff/parser.js";
 import {
@@ -39,7 +40,8 @@ export class CorrelationService {
     private sentry: SentryProvider,
     private github: GitHubProvider,
     private vercel: VercelProvider,
-    private betterstack: BetterStackProvider
+    private betterstack?: BetterStackProvider,
+    private cloudflare?: CloudflareProvider
   ) {}
 
   /**
@@ -127,6 +129,7 @@ export class CorrelationService {
     let parsedDiffMap = new Map<string, ParsedFileDiff>();
     let rawDiffFiles: any[] = [];
     let headCommitMeta: any;
+    let totalCommitsCount = 0;
 
     if (
       this.github.isConfigured() &&
@@ -144,6 +147,7 @@ export class CorrelationService {
         });
 
         rawDiffFiles = codeChanges.files;
+        totalCommitsCount = codeChanges.totalCommits || codeChanges.commits.length;
         parsedDiffMap = parseGitDiff(codeChanges.files);
         headCommitMeta = codeChanges.commits[codeChanges.commits.length - 1];
       } catch {
@@ -151,7 +155,31 @@ export class CorrelationService {
       }
     }
 
-    // 3. Query Sentry for candidate errors
+    // 3. Inspect Edge and Infrastructure Signals
+    let edgeSpikeCorrelated = false;
+    if (this.cloudflare && this.cloudflare.isConfigured()) {
+      try {
+        const analytics = await this.cloudflare.getHttpAnalytics({ sinceMinutesAgo: 60 });
+        const rate = parseFloat(analytics.errorRate5xx);
+        if (rate > 1.0 || (analytics.statusCodes?.["5xx"] || 0) > 5) {
+          edgeSpikeCorrelated = true;
+        }
+      } catch {
+        // Cloudflare query fallback
+      }
+    }
+
+    let uptimeDownCount = 0;
+    if (this.betterstack && this.betterstack.isConfigured()) {
+      try {
+        const monitors = await this.betterstack.getMonitors();
+        uptimeDownCount = monitors.filter((m) => m.status === "down").length;
+      } catch {
+        // Better Stack fallback
+      }
+    }
+
+    // 4. Query Sentry for candidate errors (filtered by environment)
     let suspectErrors: UnifiedError[] = [];
     let bestEvaluation: IncidentEvaluation | null = null;
 
@@ -160,6 +188,7 @@ export class CorrelationService {
         suspectErrors = await this.sentry.getRecentErrors({
           project: params.serviceOrProject,
           statsPeriod: timeframe,
+          environment,
           limit: 10,
         });
 
@@ -203,7 +232,7 @@ export class CorrelationService {
                     temporal: {
                       minutesBetweenDeployAndError: minutesDiff,
                       isPostDeploy,
-                      edgeSpikeCorrelated: true, // Correlated with deployment window
+                      edgeSpikeCorrelated,
                     },
                     candidateMeta: {
                       functionName: frame.function,
@@ -214,6 +243,12 @@ export class CorrelationService {
                       errorId: err.id,
                     },
                   });
+
+                  if (uptimeDownCount > 0) {
+                    candidateEval.confidence.caveats.push(
+                      `Better Stack detects ${uptimeDownCount} monitor(s) currently down`
+                    );
+                  }
 
                   // Track the highest confidence candidate
                   if (!bestEvaluation || candidateEval.confidence.score > bestEvaluation.confidence.score) {
@@ -249,7 +284,7 @@ export class CorrelationService {
         temporal: {
           minutesBetweenDeployAndError: 0,
           isPostDeploy: false,
-          edgeSpikeCorrelated: false,
+          edgeSpikeCorrelated,
         },
       });
     }
@@ -266,7 +301,7 @@ export class CorrelationService {
       codeChangesSummary:
         targetDeployment?.commitSha && previousDeployment?.commitSha
           ? {
-              totalCommits: rawDiffFiles.length > 0 ? 1 : 0,
+              totalCommits: totalCommitsCount || (rawDiffFiles.length > 0 ? 1 : 0),
               filesModifiedCount: rawDiffFiles.length,
               baseSha: previousDeployment.commitSha,
               headSha: targetDeployment.commitSha,

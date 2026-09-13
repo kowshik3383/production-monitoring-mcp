@@ -36,13 +36,14 @@ export class SentryProvider {
   }
 
   /**
-   * Fetch recent errors/issues from Sentry with filtering by project, query, or timeframe.
+   * Fetch recent errors/issues from Sentry with filtering by project, query, timeframe, or environment.
    */
   async getRecentErrors(params?: {
     project?: string;
     query?: string;
     statsPeriod?: string; // e.g. "24h", "14d", "1h"
     limit?: number;
+    environment?: string;
   }): Promise<UnifiedError[]> {
     this.ensureConfigured();
     const project = params?.project || this.defaultProject;
@@ -55,6 +56,10 @@ export class SentryProvider {
       queryParts.push(params.query);
     } else {
       queryParts.push("is:unresolved");
+    }
+
+    if (params?.environment) {
+      queryParts.push(`environment:${params.environment}`);
     }
 
     const res = await this.client!.get(
@@ -110,13 +115,33 @@ export class SentryProvider {
             errorValue = errorValue || exc.value;
             if (exc.stacktrace?.frames) {
               for (const f of exc.stacktrace.frames) {
+                const lineno = f.lineno ?? f.lineNo ?? (typeof f.line === "number" ? f.line : undefined);
+                const colno = f.colno ?? f.colNo ?? (typeof f.col === "number" ? f.col : undefined);
+                const inApp = Boolean(f.in_app ?? f.inApp ?? true);
+                const filename = f.filename || f.abs_path || f.absPath || "unknown";
+
+                // Reconstruct full surrounding context from Sentry frame properties
+                let context: string[] = [];
+                if (Array.isArray(f.pre_context)) {
+                  context.push(...f.pre_context);
+                }
+                if (f.context_line) {
+                  context.push(f.context_line);
+                }
+                if (Array.isArray(f.post_context)) {
+                  context.push(...f.post_context);
+                }
+                if (context.length === 0 && Array.isArray(f.context)) {
+                  context = f.context.map((c: any) => (Array.isArray(c) ? `${c[0]}: ${c[1]}` : String(c)));
+                }
+
                 stacktrace.push({
-                  filename: f.filename || f.absPath || "unknown",
+                  filename,
                   function: f.function,
-                  lineno: f.lineNo,
-                  colno: f.colNo,
-                  inApp: Boolean(f.inApp),
-                  context: f.context?.map((c: any) => `${c[0]}: ${c[1]}`) || [],
+                  lineno,
+                  colno,
+                  inApp,
+                  context,
                 });
               }
             }
@@ -170,6 +195,7 @@ export class SentryProvider {
     project?: string;
     timeframe?: string;
     release?: string;
+    environment?: string;
   }): Promise<UnifiedError[]> {
     this.ensureConfigured();
     const queryParts = ["is:unresolved"];
@@ -184,6 +210,7 @@ export class SentryProvider {
         project: params?.project,
         query: queryParts.join(" "),
         statsPeriod: params?.timeframe || "24h",
+        environment: params?.environment,
       });
 
       if (results.length > 0) return results;
@@ -194,6 +221,7 @@ export class SentryProvider {
         query: "is:unresolved",
         statsPeriod: params?.timeframe || "24h",
         limit: 10,
+        environment: params?.environment,
       });
     } catch (err: any) {
       throw new Error(`Failed to find regressions from Sentry: ${err.message}`);
