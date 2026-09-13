@@ -16,7 +16,18 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "init": "tsx src/index.ts init",
-    "doctor": "tsx src/index.ts doctor"
+    "doctor": "tsx src/index.ts doctor",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm test && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kowshik3383/production-monitoring-mcp.git"
+  },
+  "homepage": "https://github.com/kowshik3383/production-monitoring-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/kowshik3383/production-monitoring-mcp/issues"
   },
   "keywords": [
     "mcp",
@@ -31,12 +42,13 @@
     "claude",
     "cursor"
   ],
-  "author": "",
+  "author": "Kowshik Valipireddy",
   "license": "MIT",
   "dependencies": {
     "@clack/prompts": "^1.8.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@octokit/rest": "^21.1.1",
+    "@valipireddykowshik/mcpdx": "^0.1.1",
     "axios": "^1.20.0",
     "commander": "^15.0.0",
     "conf": "^15.1.0",
@@ -47,6 +59,7 @@
     "@types/node": "^22.20.2",
     "tsup": "^8.5.1",
     "tsx": "^4.23.13",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.11"
   }
 }
