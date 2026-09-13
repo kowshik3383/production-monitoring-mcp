@@ -1,0 +1,38 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      SENTRY_AUTH_TOKEN:
+        type: string
+        description: Sentry API auth token with read access
+      SENTRY_ORG:
+        type: string
+        description: Sentry organization slug
+      SENTRY_PROJECT:
+        type: string
+        description: Default Sentry project slug
+      GITHUB_TOKEN:
+        type: string
+        description: GitHub personal access token with read-only permissions
+      GITHUB_OWNER:
+        type: string
+        description: Default GitHub repository owner or organization
+      GITHUB_REPO:
+        type: string
+        description: Default GitHub repository name
+      VERCEL_TOKEN:
+        type: string
+        description: Vercel read-only API access token
+      BETTERSTACK_API_TOKEN:
+        type: string
+        description: Better Stack Uptime API token
+      CLOUDFLARE_API_TOKEN:
+        type: string
+        description: Cloudflare API token with Analytics:Read permission
+      CLOUDFLARE_ZONE_ID:
+        type: string
+        description: Cloudflare Zone ID for edge analytics
+  commandArgs:
+    - -y
+    - production-monitoring-mcp

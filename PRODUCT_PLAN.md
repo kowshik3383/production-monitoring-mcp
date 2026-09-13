@@ -165,28 +165,37 @@ interface IncidentContext {
 
 ---
 
-## 🧰 4. Structured Tool Taxonomy (13 Tools)
+## 🧰 4. Structured Tool & Resource Taxonomy
 
-To reduce LLM context bloat, tools follow a strict lifecycle: **Discover → Investigate → Correlate → Explain**.
+To reduce LLM context bloat, tools follow a strict lifecycle: **Discover → Investigate → Correlate → Explain**, supplemented by standard **MCP Resources** and **MCP Prompt Templates**.
 
 ### 1. Discovery (Low Context, High Breadth)
-*   `get_production_health` — Single-call operational pulse (Uptime + Sentry spike + Vercel deploy + Edge 5xx). Returns lean signal badges, not raw logs.
-*   `get_recent_errors` — Unresolved error issues with frequency and affected users.
-*   `get_recent_deployments` — Recent production deployments, commit SHAs, and authors.
+*   `get_production_health` — Single-call operational pulse (Uptime + Sentry spike + Vercel deploy + Edge 5xx). Returns lean signal badges, cached for 30s.
+*   `get_observability_status` — Inspects connected production monitoring providers and reports missing configuration keys.
+*   `get_recent_errors` — Unresolved error issues with frequency, affected users, and environment filtering.
+*   `get_recent_deployments` (alias: `get_deployments`) — Recent production deployments, commit SHAs, and authors.
 *   `check_uptime` — Better Stack monitor availability and active downtime alerts.
 
 ### 2. Investigation (Deep Inspection)
-*   `get_error_details` — Full stack trace, normalized in-app frames, tags, and breadcrumbs.
+*   `get_error_details` — Full stack trace, normalized in-app frames, tags, and breadcrumbs. Supports `compact: true` to limit breadcrumbs and strip external frames for token budgeting.
 *   `get_deployment_logs` — Runtime and build logs for a specific deployment ID.
-*   `compare_deployments` — Git commit log and changed file diffs between two releases.
-*   `get_commit_details` — Individual commit metadata and patch hunk snippets.
+*   `compare_deployments` — Git commit log and changed file diffs between two releases (cached for 120s).
+*   `get_commit_details` — Individual commit metadata and patch hunk snippets without lossy diff truncation.
 *   `analyze_logs` — Structured application log queries (Better Stack Logs / Logtail).
-*   `analyze_api_latency` — Edge HTTP distribution (2xx/4xx/5xx) and latency percentiles.
+*   `analyze_api_latency` — Edge HTTP distribution (2xx/4xx/5xx) and latency percentiles from Cloudflare (cached for 60s).
 
 ### 3. Intelligence (Composite Synthesis)
 *   `correlate_incident` — Multi-dimensional correlation engine linking deployment, diffs, stack trace, and metrics.
-*   `find_regression` — Pinpoints issues first introduced in a specific release.
+*   `find_regression` — Pinpoints issues first introduced in a specific release or recent deployment.
 *   `explain_incident` — Formats a structured, human-readable root-cause executive briefing for immediate engineer handoff.
+
+### 4. MCP Resources (Addressable Context)
+*   `observability://pulse` — Real-time JSON health badge containing operational status, uptime monitor health, and error counts.
+*   `observability://status` — Provider connection health and configuration status.
+
+### 5. MCP Prompts (Built-in Agent Workflows)
+*   `triage-incident(service_or_project, timeframe)` — Guided incident investigation connecting deployments, error stacktraces, and edge signals.
+*   `investigate-regression(project, release)` — Release regression diagnostic prompt.
 
 ---
 
@@ -245,35 +254,44 @@ Rollback deployment dpl_9a4f21 or revert PR #182.
 
 ---
 
-## 📅 7. Revised Implementation Roadmap
+## 📅 7. Implementation Roadmap & Status
 
 ```text
-PHASE 1: INCIDENT ENGINE CORE (Current Focus)
-├── Path Normalization (src/core/normalization/path.ts)
-├── Git Unified Diff Hunk Parser (added/removed/context lines)
-├── Multi-Dimensional Evidence Model (Code, Runtime, Temporal)
-├── Structured Confidence Evaluator (with basis & caveats)
-└── Deterministic Test Fixtures
+PHASE 1: INCIDENT ENGINE CORE ✅ [100% COMPLETE]
+├── Path & Stack Normalization (src/core/normalization/path.ts) [DONE]
+├── Monorepo Subpath Resolution (resolveMonorepoPath) [DONE]
+├── Git Unified Diff Hunk Parser (added/removed/context lines) [DONE]
+├── Multi-Dimensional Evidence Model (Code, Runtime, Temporal) [DONE]
+├── Structured Confidence Evaluator (with basis & caveats) [DONE]
+└── Automated Test Suite (tests/ - 22 passing unit tests) [DONE]
 
-PHASE 2: COMPOSITE MASTER TOOLS
-├── get_production_health (Lean, context-friendly operational pulse)
-├── correlate_incident (Upgraded with Evidence Model)
-├── explain_incident (Human-readable executive triage summary)
-└── find_regression (Release-aware regression finder)
+PHASE 2: MODULAR TOOLS & COMPOSITE SYNTHESIS ✅ [100% COMPLETE]
+├── Modular Tool Architecture (src/tools/discovery, investigation, intelligence) [DONE]
+├── In-Memory TTL Cache (src/utils/cache.ts) [DONE]
+├── LLM Token Budgeting & Compaction (compact: true) [DONE]
+├── get_production_health (Lean, context-friendly operational pulse) [DONE]
+├── correlate_incident (Upgraded with live Cloudflare & Better Stack signals) [DONE]
+├── explain_incident (Human-readable executive triage briefing) [DONE]
+├── find_regression (Environment- & release-aware regression finder) [DONE]
+├── MCP Addressable Resources (observability://pulse, observability://status) [DONE]
+└── MCP Prompt Templates (triage-incident, investigate-regression) [DONE]
 
-PHASE 3: DEVELOPER EXPERIENCE & DEMO
-├── npx production-monitoring-mcp demo (Zero-token offline demonstration)
-├── npx production-monitoring-mcp init (Interactive @clack wizard)
-├── npx production-monitoring-mcp doctor (Connection diagnostics)
-└── npx production-monitoring-mcp install (Zero-touch Claude/Cursor config)
+PHASE 3: DEVELOPER EXPERIENCE & DEMO ✅ [100% COMPLETE]
+├── npx production-monitoring-mcp demo (Offline demonstration powered by real engine) [DONE]
+├── npx production-monitoring-mcp init (Interactive @clack wizard) [DONE]
+├── npx production-monitoring-mcp doctor (Live API connectivity diagnostics) [DONE]
+└── npx production-monitoring-mcp install (Claude Desktop, Cursor, Claude Code, Antigravity) [DONE]
 
-PHASE 4: SHOWCASE & LANDING PAGE
+PHASE 4: SHOWCASE & CI/CD INFRASTRUCTURE ✅ [READY]
+├── Multi-OS GitHub Actions CI Matrix (.github/workflows/ci.yml - Node 18, 20, 22 on Linux/Windows) [DONE]
+├── Multi-Stage Docker Container (Dockerfile & .dockerignore) [DONE]
+├── Stdio Protocol Stream Hygiene (Zero stdout noise on serve startup) [DONE]
 ├── brainless React Component Integration (@brainless/claude-session)
-├── Simulated Claude Code Incident Triage Terminal Demo
-└── GitHub README GIF / Video Walkthrough
+└── Simulated Claude Code Incident Triage Terminal Interactive Player
 
-PHASE 5: ECOSYSTEM LAUNCH
-├── NPM Registry Release (production-monitoring-mcp)
-├── Official MCP Directories & Smithery.ai Submission
+PHASE 5: ECOSYSTEM LAUNCH 🚀 [PREPARED]
+├── NPM Registry Release Ready (production-monitoring-mcp v1.0.0, prepublishOnly hooks) [DONE]
+├── Official MCP Directories & Smithery.ai Manifest (smithery.yaml) [DONE]
 └── Community Announcements (r/ClaudeAI, Show HN, Twitter/X)
 ```
+

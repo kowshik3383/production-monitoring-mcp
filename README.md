@@ -35,18 +35,21 @@ AI Agent (Antigravity / Claude / Cursor)
 
 | Tool Name | Provider | Description |
 | :--- | :--- | :--- |
+| `get_production_health` | **Pulse Engine** | Single-call operational pulse across uptime, Sentry error spikes, latest deployments, and 5xx rates. |
 | `get_observability_status` | MCP Core | Verifies health of all integrations and surfaces missing keys. |
 | `get_recent_errors` | Sentry | Lists recent production errors, frequency count, and affected users. |
 | `get_error_details` | Sentry | Returns full stacktrace, code context, tags, and breadcrumbs. |
 | `find_regression` | Sentry | Identifies regressed errors or issues introduced in a given release. |
-| `get_deployments` | Vercel / GitHub | Fetches recent production/preview deployments and git commits. |
+| `get_recent_deployments` | Vercel / GitHub | Fetches recent production deployments, commit SHAs, and authors. |
+| `get_deployments` | Vercel / GitHub | Alias for `get_recent_deployments`. |
 | `get_deployment_logs` | Vercel | Fetches runtime and build logs for a specific deployment ID. |
 | `compare_deployments` | GitHub | Compares two commit SHAs/tags: returns commit log and changed file diffs. |
 | `get_commit_details` | GitHub | Retrieves author, commit message, stats, and patch snippets. |
 | `check_uptime` | Better Stack | Checks availability, monitor statuses (`up`/`down`), and active incidents. |
 | `analyze_logs` | Better Stack Logs | Queries structured application logs for error spikes and log anomalies. |
 | `analyze_api_latency` | Cloudflare | Queries edge traffic, response distribution (2xx/4xx/5xx), and error rates. |
-| `correlate_incident` | **Correlation Engine** | Cross-correlates deployment commits with Sentry stacktraces for root cause analysis. |
+| `correlate_incident` | **Correlation Engine** | Cross-correlates deployment commits with Sentry stacktraces and telemetry for root cause analysis. |
+| `explain_incident` | **Synthesis Engine** | Generates a human-readable executive briefing with suspected root cause, evidence chain, and recommendation. |
 
 ---
 
